@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>X運用ダッシュボード</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        xdark: '#15202b',
+        xcard: '#192734',
+        xborder: '#38444d',
+        xblue: '#1d9bf0',
+        xtext: '#e7e9ea',
+        xsub: '#8899a6',
+      }
+    }
+  }
+}
+</script>
+<style>
+  body { background: #15202b; color: #e7e9ea; }
+  .post-item.active { background: #22303c; }
+  .post-item:hover { background: #1e2d3d; }
+  .filter-btn.active { background: #1d9bf0; color: white; }
+  .status-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 9999px; }
+  .status-ストック { background: #1d9bf0; color: white; }
+  .status-使用済み { background: #f59e0b; color: #111; }
+  .status-投稿済み { background: #22c55e; color: #111; }
+  .mcp-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .mcp-dot.online { background: #22c55e; }
+  .mcp-dot.offline { background: #ef4444; }
+  textarea { resize: vertical; }
+  .modal-overlay { background: rgba(0,0,0,0.6); }
+</style>
+</head>
+<body class="dark h-screen flex flex-col overflow-hidden">
+
+<!-- Header -->
+<header class="flex items-center justify-between px-4 py-2 border-b border-xborder bg-xcard shrink-0">
+  <h1 class="text-lg font-bold">X運用ダッシュボード</h1>
+  <div class="flex items-center gap-4 text-sm">
+    <div id="mcp-indicators" class="flex gap-3"></div>
+    <button id="api-key-btn" onclick="openConfigModal()" class="px-3 py-1 rounded text-xs border border-xborder hover:bg-xdark"></button>
+  </div>
+</header>
+
+<!-- Character Tabs -->
+<div id="char-tabs" class="flex border-b border-xborder bg-xcard shrink-0"></div>
+
+<!-- View Tabs -->
+<div class="flex border-b border-xborder bg-xcard shrink-0">
+  <button id="view-manage" onclick="switchView('manage')" class="px-5 py-2 text-sm border-b-2 border-xblue text-xblue">投稿管理</button>
+  <button id="view-research" onclick="switchView('research')" class="px-5 py-2 text-sm border-b-2 border-transparent text-xsub hover:text-xtext">リサーチ</button>
+</div>
+
+<!-- Main Layout: 投稿管理 -->
+<div id="panel-manage" class="flex flex-1 overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside class="w-72 border-r border-xborder flex flex-col shrink-0 overflow-hidden">
+    <!-- Filters -->
+    <div class="flex gap-1 p-2 border-b border-xborder shrink-0 flex-wrap">
+      <button class="filter-btn active text-xs px-2 py-1 rounded" data-filter="すべて">すべて</button>
+      <button class="filter-btn text-xs px-2 py-1 rounded border border-xborder" data-filter="ストック">ストック</button>
+      <button class="filter-btn text-xs px-2 py-1 rounded border border-xborder" data-filter="使用済み">使用済み</button>
+      <button class="filter-btn text-xs px-2 py-1 rounded border border-xborder" data-filter="投稿済み">投稿済み</button>
+    </div>
+    <!-- Post List -->
+    <div id="post-list" class="flex-1 overflow-y-auto"></div>
+    <!-- Actions + Settings -->
+    <div class="border-t border-xborder p-2 shrink-0">
+      <button onclick="openGenerateModal()" class="w-full py-2 bg-xblue text-white rounded text-sm font-bold hover:opacity-90 mb-1">✦ 投稿を生成</button>
+      <button onclick="openExportModal()" class="w-full py-2 bg-green-600 text-white rounded text-sm font-bold hover:opacity-90 mb-2">SocialDog CSV出力</button>
+      <div class="text-xs text-xsub">
+        <div class="font-bold mb-1">キャラ設定</div>
+        <div class="flex flex-wrap gap-1">
+          <button onclick="openSetting('profile')" class="hover:text-xblue">プロフィール</button>
+          <button onclick="openSetting('brand-voice')" class="hover:text-xblue">口調ルール</button>
+          <button onclick="openSetting('ng-words')" class="hover:text-xblue">NGワード</button>
+          <button onclick="openSetting('dm-template')" class="hover:text-xblue">DMテンプレ</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main id="main-content" class="flex-1 overflow-y-auto p-6">
+    <div class="text-xsub text-center mt-20">投稿を選択してください</div>
+  </main>
+</div>
+
+<!-- Main Layout: リサーチ -->
+<div id="panel-research" class="hidden" style="flex:1;display:none;flex-direction:column;overflow:hidden">
+  <!-- Search Bar -->
+  <div class="p-4 border-b border-xborder bg-xcard shrink-0">
+    <div class="flex gap-2 mb-2">
+      <input id="rs-query" type="text" placeholder="キーワード検索 (例: 古着 副業 lang:ja min_faves:100)" class="flex-1 bg-xdark border border-xborder rounded px-3 py-2 text-sm" onkeydown="if(event.key==='Enter')searchX()">
+      <button onclick="searchX()" class="px-4 py-2 bg-xblue text-white rounded text-sm font-bold hover:opacity-90">検索</button>
+      <select id="rs-saved-queries" class="bg-xdark border border-xborder rounded px-2 text-sm" onchange="loadSavedQuery(this.value)">
+        <option value="">保存済み▼</option>
+      </select>
+      <button onclick="saveCurrentQuery()" class="px-3 py-2 border border-xborder rounded text-xs hover:bg-xdark" title="現在のクエリを保存">💾</button>
+    </div>
+    <div class="flex gap-3 items-center text-xs text-xsub">
+      <span id="rs-result-count"></span>
+      <div class="flex gap-1 ml-auto">
+        <button onclick="switchResearchView('search')" id="rv-search" class="px-2 py-1 rounded bg-xblue text-white text-xs">検索結果</button>
+        <button onclick="switchResearchView('collected')" id="rv-collected" class="px-2 py-1 rounded border border-xborder text-xs">収集済み</button>
+      </div>
+    </div>
+  </div>
+  <!-- Results -->
+  <div id="rs-results" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+  <!-- Analysis Bar -->
+  <div class="p-3 border-t border-xborder bg-xcard shrink-0 flex items-center gap-3">
+    <button onclick="analyzeCollected()" id="rs-analyze-btn" class="px-4 py-2 bg-purple-600 text-white rounded text-sm font-bold hover:opacity-90">📊 パターン分析</button>
+    <span id="rs-collected-count" class="text-xs text-xsub"></span>
+  </div>
+</div>
+
+<!-- Analysis Modal -->
+<div id="analysis-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+  <div class="bg-xcard border border-xborder rounded-lg w-[700px] max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-xborder shrink-0">
+      <h2 class="font-bold">📊 パターン分析</h2>
+      <button onclick="closeAnalysisModal()" class="text-xsub hover:text-white text-xl">&times;</button>
+    </div>
+    <div id="analysis-content" class="flex-1 overflow-y-auto p-4 text-sm leading-relaxed whitespace-pre-wrap"></div>
+  </div>
+</div>
+
+<!-- Research Post Detail Modal -->
+<div id="rs-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+  <div class="bg-xcard border border-xborder rounded-lg w-[600px] max-h-[80vh] flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-xborder shrink-0">
+      <h2 class="font-bold text-sm" id="rs-detail-author"></h2>
+      <button onclick="closeRsDetail()" class="text-xsub hover:text-white text-xl">&times;</button>
+    </div>
+    <div id="rs-detail-body" class="flex-1 overflow-y-auto p-4"></div>
+  </div>
+</div>
+
+<!-- Config Modal -->
+<div id="config-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+  <div class="bg-xcard border border-xborder rounded-lg p-6 w-96">
+    <h2 class="font-bold mb-3">Anthropic APIキー設定</h2>
+    <input id="api-key-input" type="password" placeholder="sk-ant-..." class="w-full bg-xdark border border-xborder rounded px-3 py-2 text-sm mb-3">
+    <div class="flex gap-2 justify-end">
+      <button onclick="closeConfigModal()" class="px-3 py-1 text-sm border border-xborder rounded">キャンセル</button>
+      <button onclick="saveApiKey()" class="px-3 py-1 text-sm bg-xblue text-white rounded">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generate Modal -->
+<div id="generate-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+  <div class="bg-xcard border border-xborder rounded-lg p-6 w-96">
+    <h2 class="font-bold mb-3">投稿を生成</h2>
+    <div class="mb-3">
+      <label class="text-sm text-xsub block mb-1">モード</label>
+      <select id="gen-mode" class="w-full bg-xdark border border-xborder rounded px-3 py-2 text-sm" onchange="toggleGenFields()">
+        <option value="weekly">週次 21本</option>
+        <option value="single">単発 1本</option>
+      </select>
+    </div>
+    <div id="gen-single-fields" class="hidden">
+      <div class="mb-3">
+        <label class="text-sm text-xsub block mb-1">投稿タイプ</label>
+        <select id="gen-type" class="w-full bg-xdark border border-xborder rounded px-3 py-2 text-sm">
+          <option value="A">A — 日常・共感</option>
+          <option value="B">B — ノウハウ</option>
+          <option value="C">C — ストーリー</option>
+          <option value="D">D — 導線</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-xsub block mb-1">テーマ（任意）</label>
+        <input id="gen-theme" type="text" placeholder="例: 仕入れが届いた日の話" class="w-full bg-xdark border border-xborder rounded px-3 py-2 text-sm">
+      </div>
+    </div>
+    <div id="gen-progress" class="hidden text-sm text-xsub mb-3">生成中...</div>
+    <div class="flex gap-2 justify-end">
+      <button onclick="closeGenerateModal()" class="px-3 py-1 text-sm border border-xborder rounded">キャンセル</button>
+      <button id="gen-start-btn" onclick="startGenerate()" class="px-3 py-1 text-sm bg-xblue text-white rounded">生成開始</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export Modal -->
+<div id="export-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+  <div class="bg-xcard border border-xborder rounded-lg p-6 w-[440px]">
+    <h2 class="font-bold mb-3">SocialDog CSV出力</h2>
+    <div class="mb-3">
+      <label class="text-sm text-xsub block mb-1">対象ステータス</label>
+      <select id="exp-status" class="w-full bg-xdark border border-xborder rounded px-3 py-2 text-sm" onchange="updateExportPreview()">
+        <option value="ストック">ストック</option>
+        <option value="使用済み">使用済み</option>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="text-sm text-xsub block mb-1">投稿開始日</label>
+      <input id="exp-start-date" type="date" class="w-full bg-xdark border border-xborder rounded px-3 py-2 text-sm" onchange="updateExportPreview()">
+    </div>
+    <div class="mb-3">
+      <label class="text-sm text-xsub block mb-1">投稿時間帯（1行1スロット）</label>
+      <textarea id="exp-time-slots" rows="3" class="w-full bg-xdark border border-xborder rounded px-3 py-2 text-sm font-mono" onchange="updateExportPreview()">07:00
+12:00
+19:00</textarea>
+    </div>
+    <div id="exp-preview" class="text-sm text-xsub mb-3 p-2 bg-xdark rounded"></div>
+    <div class="flex gap-2 justify-end">
+      <button onclick="closeExportModal()" class="px-3 py-1 text-sm border border-xborder rounded">キャンセル</button>
+      <button id="exp-download-btn" onclick="downloadExport()" class="px-3 py-1 text-sm bg-green-600 text-white rounded">CSVダウンロード</button>
+    </div>
+  </div>
+</div>
+
+<!-- Setting Modal -->
+<div id="setting-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+  <div class="bg-xcard border border-xborder rounded-lg p-6 w-[600px] max-h-[80vh] flex flex-col">
+    <h2 id="setting-title" class="font-bold mb-3"></h2>
+    <textarea id="setting-content" class="flex-1 w-full bg-xdark border border-xborder rounded px-3 py-2 text-sm font-mono min-h-[300px]"></textarea>
+    <div class="flex gap-2 justify-end mt-3">
+      <button onclick="closeSettingModal()" class="px-3 py-1 text-sm border border-xborder rounded">キャンセル</button>
+      <button onclick="saveSetting()" class="px-3 py-1 text-sm bg-xblue text-white rounded">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=2"></script>
+</body>
+</html>

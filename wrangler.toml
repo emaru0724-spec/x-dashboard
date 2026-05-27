@@ -1,0 +1,13 @@
+name = "x-dashboard"
+main = "src/worker/index.ts"
+compatibility_date = "2024-12-01"
+workers_dev = true
+
+[assets]
+directory = "./dist/client"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "x-dashboard"
+database_id = "22f9d46f-7ef5-4982-8f2e-867526f6ff4e"
